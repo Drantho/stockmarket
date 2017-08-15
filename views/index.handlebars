@@ -1,0 +1,168 @@
+<script src="/socket.io/socket.io.js"></script>
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
+<script>
+
+    $(document).ready(function () {
+
+        console.log("jQuery loaded");
+
+        var socket = io();
+        socket.emit('clientLoad', 'Client connected');
+
+        socket.on('broadcast', function (data) {
+            if (data.chartData != '[]') {
+                createChart(data);
+            }
+            
+        });
+
+        $("#btnGetStock").click(function () {
+            console.log("btnclick fires " + $("#txtStockSymbol").val());
+            //getData($("#txtStockSymbol").val());
+            socket.emit('chartData', $("#txtStockSymbol").val());
+            $("#txtStockSymbol").val("");
+        });
+
+
+    });   
+    
+    function createChart(data) {
+
+        var colors = ["#a50026","#d73027","#f46d43","#fdae61","#fee090","#ffffbf","#e0f3f8","#abd9e9","#74add1","#4575b4","#313695"];
+
+        console.log("createChart() fires");
+
+        var svg = d3.select("svg"),
+            margin = {top: 20, right: 20, bottom: 30, left: 50},
+            width = +svg.attr("width") - margin.left - margin.right,
+            height = +svg.attr("height") - margin.top - margin.bottom,
+            g = svg.append("g").attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+        svg.selectAll("*").remove();
+
+        var chartData = JSON.parse(data.chartData);
+
+        console.log('chartData');
+        console.log(chartData);
+
+        // set the dimensions and margins of the graph
+        var margin = { top: 20, right: 20, bottom: 30, left: 50 },
+            width = 960 - margin.left - margin.right,
+            height = 500 - margin.top - margin.bottom;
+
+
+        // set the ranges
+        var x = d3.scaleTime().range([0, width]);
+        var y = d3.scaleLinear().range([height, 0]);
+
+        // define the line
+        var valueline = d3.line()
+            .x(function (d) { return x(d.date); })
+            .y(function (d) { return y(d.close); });
+
+        // append the svg obgect to the body of the page
+        // appends a 'group' element to 'svg'
+        // moves the 'group' element to the top left margin
+        var svg = d3.select("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+            .attr("transform",
+                "translate(" + margin.left + "," + margin.top + ")");
+
+        // format the data        
+        chartData.forEach(function (d) {
+            d.chart.forEach(function (e) {
+                var newDate = new Date(e.date);
+                e.date = newDate;
+                e.close = +e.close;
+            });
+        });
+
+        var min = d3.min(chartData, function(d) { return d3.min(d.chart, function(e) { return e.close; }) });
+        var max = d3.max(chartData, function(d) { return d3.max(d.chart, function(e) { return e.close; }) });
+
+        //var min = 0;//d3.min(chartData, function (d) { return d3.min(d.close); });
+        //var max = 200;//d3.min(chartData, function(d) { return d3.max(d.close); });
+
+        // Scale the range of the data
+        x.domain(d3.extent(chartData[0].chart, function(d) { return d.date; }));
+        y.domain([min,max]);
+
+        // Add the X Axis
+        svg.append("g")
+            .attr("transform", "translate(0," + height + ")")
+            .call(d3.axisBottom(x));
+
+        // Add the Y Axis
+        svg.append("g")
+            .call(d3.axisLeft(y));
+
+        for (var i = 0; i < chartData.length; i++) {
+            svg.append("path")
+                .data([chartData[i].chart])
+                .attr("class", "line")
+                .attr("fill", "none")
+                .attr("stroke", colors[i%11])
+                .attr("stroke-width", "2")
+                .attr("d", valueline);
+        }
+
+        d3.selectAll("#divLegend").selectAll('*').remove();
+
+        d3.selectAll("#divLegend")
+            .selectAll('div')
+            .data(chartData)
+            .enter()
+            .append("div")
+            .html(function (d, i) { return "<h3><span class='legend' style='background-color: " + colors[i] + ";'></span> " + d.symbol + " <a onclick='deleteStock(\"" + d.symbol + "\");'><span class='glyphicon glyphicon-remove' aria-hidden='true' style='position: relative; top: 4px'></span></a></h3>" })
+            .style("text-transform", "uppercase");        
+    }
+
+    function deleteStock(stock) {
+        var socket = io();
+        console.log('removeStock(' + stock + ') fires.');
+
+        d3.select('#divLegend').selectAll('*').remove();
+        d3.selectAll('svg').selectAll('*').remove();
+        socket.emit('removeStock', stock);
+
+
+    }
+
+</script>
+<style>
+    .legend {
+        height: 20px;
+        width: 20px;
+        border-style: solid;
+        border-color: #333333;
+        border-radius: 3px;
+        display: inline-block;
+    }
+    a{
+        cursor: pointer;
+    }
+</style>
+
+
+<div class="row"> 
+    <div class="col-md-8">
+        <svg width="800" height="400">
+        </svg>
+    </div>
+    <div class="col-md-2">
+        <div id="divLegend"></div>
+    </div>
+</div>
+<div class="form-group row">
+    <div class="col-sm-4">
+        <label for="txtStockSymbol" class="col-md-4 control-label">
+            Stock Symbol:
+        </label>
+        <input type="text" id="txtStockSymbol" class="form-control" /><br />
+        <button class="btn btn-default" id="btnGetStock">Get Stock</button>
+    </div>
+</div>
