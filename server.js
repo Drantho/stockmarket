@@ -7,29 +7,30 @@ require('dotenv').config();
 
 var $ = require('jquery');
 
-// view engine setup
+// View engine setup
 var handlebars = require('express-handlebars')
     .create({ defaultLayout: 'main' });
 app.engine('handlebars', handlebars.engine);
 app.set('view engine', 'handlebars');
 
+// Default route
 app.get('/', function (req, res) {
-    console.log('logs work');
     res.render('index');
 });
 
+// Array to store stock symbols
 var chartData = [];
 
-//Whenever someone connects this gets executed
+
 io.on('connection', function (socket) {
-    console.log('A user connected');
     
+    //Send chart data on initial load
     socket.on('clientLoad', function (data) {
         io.sockets.emit('broadcast', { 'chartData': JSON.stringify(chartData) });
     });
 
+    //Remove stock from array on user request
     socket.on('removeStock', function (data) {
-        console.log('removeStock fires()');
 
         for (var i = 0; i < chartData.length; i++) {
             if (chartData[i].symbol == data) {
@@ -37,7 +38,7 @@ io.on('connection', function (socket) {
             }
         }
         
-
+        // Send new data to clients
         io.sockets.emit('broadcast', { 'chartData': JSON.stringify(chartData) });
     });
 
@@ -48,6 +49,7 @@ io.on('connection', function (socket) {
             console.log(url);
             d3.json(url, function (d) {
 
+                //Format data
                 var parsedData = {};
                 parsedData.symbol = d["Meta Data"]["2. Symbol"];
                 parsedData.chart = [];
@@ -57,22 +59,21 @@ io.on('connection', function (socket) {
                     var obj = {};
                     obj.date = new Date(property);
                     obj.close = d["Monthly Time Series"][property]["4. close"];
+                    obj.close = Number(obj.close).toFixed(2);
                     parsedData.chart.push(obj);
                 }
                 chartData.push(parsedData);
                 io.sockets.emit('broadcast', { 'chartData': JSON.stringify(chartData) });
 
             });
-            
-            //chartData.push(data);
-            //io.sockets.emit('broadcast', { 'chartData': JSON.stringify(chartData) });
+          
         }
-        
-        
+      
     });
 
 });
 
+//Loop through array to avoid duplicate stocks
 function stockExists(stock) {
 
     for (var i = 0; i < chartData.length; i++) {
@@ -83,6 +84,5 @@ function stockExists(stock) {
     return false;
 }
 
-
-
+//Start server
 http.listen(process.env.PORT || 3000);
