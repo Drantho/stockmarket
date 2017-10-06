@@ -1,137 +1,236 @@
 <script src="/socket.io/socket.io.js"></script>
-<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
-<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+<link rel="stylesheet" href="https://code.getmdl.io/1.3.0/material.indigo-pink.min.css">
+<script defer src="https://code.getmdl.io/1.3.0/material.min.js"></script>
 <script>
-
-    $(document).ready(function () {
-
-        console.log("jQuery loaded");
-
-        var socket = io();
-        socket.emit('clientLoad', 'Client connected');
-
-        socket.on('broadcast', function (data) {
-            if (data.chartData != '[]') {
-                createChart(data);
+  var formatter = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+  });
+  
+  $(document).ready(function () {
+  
+    var socket = io();
+    socket.emit('clientLoad', 'Client connected');
+    // Get data from server broadcast    
+    socket.on('broadcast', function (data) {
+      if (data.chartData != '[]') {
+      
+        // Call d3 format function
+        createChart(data);
+      }
+      
+    });
+    
+    // Get stock button event listener
+    $("#btnGetStock").click(function () {
+    
+      // Send stock symbol to server for processing
+      socket.emit('chartData', $("#txtStockSymbol").val());
+      
+      // Clear textbox
+      $("#txtStockSymbol").val("");
+    });
+    
+  });
+  
+  function createChart(data) {
+  
+    
+  
+    // Array of graph colors
+    var colors = ["#a50026","#d73027","#f46d43","#fdae61","#fee090","#ffffbf","#e0f3f8","#abd9e9","#74add1","#4575b4","#313695"];
+    // Declare svg dimensions and margins
+    var svg = d3.select("svg"),
+      margin = {top: 20, right: 20, bottom: 30, left: 50},
+      width = +svg.attr("width") - margin.left - margin.right,
+      height = +svg.attr("height") - margin.top - margin.bottom,
+      g = svg.append("g").attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+      
+    // Clear previous charts
+    svg.selectAll("*").remove();
+    var chartData = JSON.parse(data.chartData);
+      
+    // Set the ranges
+    var x = d3.scaleTime().range([margin.left, width+margin.left]);
+    var y = d3.scaleLinear().range([height, 0]);
+    // Define the line
+    var valueline = d3.line()
+      .x(function (d) { return x(d.date); })
+      .y(function (d) { return y(d.close); });
+      
+    // Create tooltip        
+    var div = d3.select("body").append("div")
+      .attr("class", "tooltip")				
+      .style("opacity", 0);
+          
+    // Create vertical line      
+    var xLine = d3.select("body").append("div")
+      .attr("class", "xLine");    
+    // Format the data        
+    chartData.forEach(function (d) {
+      d.chart.forEach(function (e) {
+        var newDate = new Date(e.date);
+        e.date = newDate;
+        e.close = +Number(e.close).toFixed(2);
+      });
+    });
+    // Get range of all selected stocks
+    var min = d3.min(chartData, function(d) { return d3.min(d.chart, function(e) { return e.close; }) });
+    var max = d3.max(chartData, function(d) { return d3.max(d.chart, function(e) { return e.close; }) });
+    // Scale the range of the data
+    x.domain(d3.extent(chartData[0].chart, function(d) { return d.date; }));
+    y.domain([min,max]);
+           
+    // Set Linear x scale
+    var xScale = d3.scaleLinear().domain([60,width+margin.left+14]).range([0,chartData[0].chart.length]);
+      
+    // Add the X Axis
+    svg.append("g")
+      .attr("transform", "translate(0," + height + ")")
+      .call(d3.axisBottom(x));
+    // Add the Y Axis
+    svg.append("g")
+      .attr("transform", "translate(" + margin.left + ",0)")
+      .call(d3.axisLeft(y));
+            
+    // Loop through each stock        
+    for (var i = 0; i < chartData.length; i++) {
+    
+      // Add line for individual stock
+      svg.append("path")
+        .data([chartData[i].chart])
+        .attr("class", "line")
+        .attr("fill", "none")
+        .attr("stroke", colors[i%11])
+        .attr("stroke-width", "2")
+        .attr("d", valueline);
+                
+      // Add invisible overlay to capture mouse location                
+      svg.append('rect')
+        .attr("x", margin.left)
+        .attr("fill", "purple")
+        .attr("opacity", 0)
+        .attr('height', height)
+        .attr('width', width)
+        .attr('stroke', 'none')
+        .on("mousemove", function(d) {	
+    
+          // Create html for tooltip
+          var html = '<h4>' + formatDate(chartData[0].chart[211-(Math.round(xScale(d3.event.pageX)))].date) + '</h4>';
+          for(var i=0; i<chartData.length; i++){
+          
+            html += '<span class="symbolLabel ';
+            
+            if(i%2==0){
+              html += 'lightgray';
             }
             
+            html += '"><strong>' + chartData[i].symbol + ': </strong></span>';
+            
+            // Catch stocks that didnt exist at time
+            html += "<span class='value ";
+            if(i%2==0){
+              html += 'lightgray';
+            }
+            html += "'>";
+            try{
+              html += formatter.format(chartData[i].chart[213-(Math.round(xScale(d3.event.pageX)))].close);
+            }
+            catch(e){
+              html += "no data";
+            }
+            html += '</span><br>';
+          }              
+          
+          // Make the vertical line visible
+          xLine.transition()		
+            .duration(200)		
+            .style("opacity", .4);		
+        
+          // Set vertical line to mouse position
+          xLine	
+            .style("left", (d3.event.pageX) + "px");
+              
+          // Make tooltip visible
+          div.transition()		
+            .duration(200)		
+            .style("opacity", .9);		
+        
+          // Set tooltip to mouse position
+          div	.html(html)	
+            .style("left", (d3.event.pageX) + "px")		
+            .style("top", (d3.event.pageY) + "px");
+        })
+        
+        //Hide tooltip
+        .on("mouseout", function(d) {	
+          div.transition()		
+            .duration(500)		
+            .style("opacity", 0);   
+          
+          // Hide xLine 
+          xLine.transition()		
+            .duration(500)		
+            .style("opacity", 0);
         });
-
-        $("#btnGetStock").click(function () {
-            console.log("btnclick fires " + $("#txtStockSymbol").val());
-            //getData($("#txtStockSymbol").val());
-            socket.emit('chartData', $("#txtStockSymbol").val());
-            $("#txtStockSymbol").val("");
-        });
-
-
-    });   
+            
+      }
+        
+      // Clear previous chart  
+      d3.selectAll("#divLegend").selectAll('*').remove();
+      // Create legend
+      d3.selectAll("#divLegend")
+        .selectAll('div')
+        .data(chartData)
+        .enter()
+        .append("span")
+        .attr("class", "mdl-chip mdl-chip--deletablen--colored")
+        .style("background-color", function(d, i){return colors[i%11];})
+        .style("margin-left", "10px")
+        .style("color", function(d, i){
+        
+          if((i%11) > 3 && (i%11) < 8){
+            return "black";
+          }
+          return "white"
+        
+        })
+        .append("span")
+        .attr("class", "mdl-chip__text")
+        .html(
+          function (d, i) {return d.symbol + " <button type='button' onclick='deleteStock(\"" + d.symbol + "\");' class='mdl-chip__action'> <i class='material-icons'>cancel</i></button> ";
+        })
+        .style("text-transform", "uppercase");
+        
+  }
+  
+  
+  
+  // Remove stock from server array
+  function deleteStock(stock) {
+    var socket = io();
     
-    function createChart(data) {
-
-        var colors = ["#a50026","#d73027","#f46d43","#fdae61","#fee090","#ffffbf","#e0f3f8","#abd9e9","#74add1","#4575b4","#313695"];
-
-        console.log("createChart() fires");
-
-        var svg = d3.select("svg"),
-            margin = {top: 20, right: 20, bottom: 30, left: 50},
-            width = +svg.attr("width") - margin.left - margin.right,
-            height = +svg.attr("height") - margin.top - margin.bottom,
-            g = svg.append("g").attr("transform", "translate(" + margin.left + "," + margin.top + ")");
-
-        svg.selectAll("*").remove();
-
-        var chartData = JSON.parse(data.chartData);
-
-        console.log('chartData');
-        console.log(chartData);
-
-        // set the dimensions and margins of the graph
-        var margin = { top: 20, right: 20, bottom: 30, left: 50 },
-            width = 960 - margin.left - margin.right,
-            height = 500 - margin.top - margin.bottom;
-
-
-        // set the ranges
-        var x = d3.scaleTime().range([0, width]);
-        var y = d3.scaleLinear().range([height, 0]);
-
-        // define the line
-        var valueline = d3.line()
-            .x(function (d) { return x(d.date); })
-            .y(function (d) { return y(d.close); });
-
-        // append the svg obgect to the body of the page
-        // appends a 'group' element to 'svg'
-        // moves the 'group' element to the top left margin
-        var svg = d3.select("svg")
-            .attr("width", width + margin.left + margin.right)
-            .attr("height", height + margin.top + margin.bottom)
-            .append("g")
-            .attr("transform",
-                "translate(" + margin.left + "," + margin.top + ")");
-
-        // format the data        
-        chartData.forEach(function (d) {
-            d.chart.forEach(function (e) {
-                var newDate = new Date(e.date);
-                e.date = newDate;
-                e.close = +e.close;
-            });
-        });
-
-        var min = d3.min(chartData, function(d) { return d3.min(d.chart, function(e) { return e.close; }) });
-        var max = d3.max(chartData, function(d) { return d3.max(d.chart, function(e) { return e.close; }) });
-
-        //var min = 0;//d3.min(chartData, function (d) { return d3.min(d.close); });
-        //var max = 200;//d3.min(chartData, function(d) { return d3.max(d.close); });
-
-        // Scale the range of the data
-        x.domain(d3.extent(chartData[0].chart, function(d) { return d.date; }));
-        y.domain([min,max]);
-
-        // Add the X Axis
-        svg.append("g")
-            .attr("transform", "translate(0," + height + ")")
-            .call(d3.axisBottom(x));
-
-        // Add the Y Axis
-        svg.append("g")
-            .call(d3.axisLeft(y));
-
-        for (var i = 0; i < chartData.length; i++) {
-            svg.append("path")
-                .data([chartData[i].chart])
-                .attr("class", "line")
-                .attr("fill", "none")
-                .attr("stroke", colors[i%11])
-                .attr("stroke-width", "2")
-                .attr("d", valueline);
-        }
-
-        d3.selectAll("#divLegend").selectAll('*').remove();
-
-        d3.selectAll("#divLegend")
-            .selectAll('div')
-            .data(chartData)
-            .enter()
-            .append("div")
-            .html(function (d, i) { return "<h3><span class='legend' style='background-color: " + colors[i] + ";'></span> " + d.symbol + " <a onclick='deleteStock(\"" + d.symbol + "\");'><span class='glyphicon glyphicon-remove' aria-hidden='true' style='position: relative; top: 4px'></span></a></h3>" })
-            .style("text-transform", "uppercase");        
-    }
-
-    function deleteStock(stock) {
-        var socket = io();
-        console.log('removeStock(' + stock + ') fires.');
-
-        d3.select('#divLegend').selectAll('*').remove();
-        d3.selectAll('svg').selectAll('*').remove();
-        socket.emit('removeStock', stock);
-
-
-    }
-
+    d3.select('#divLegend').selectAll('*').remove();
+    d3.selectAll('svg').selectAll('*').remove();
+    socket.emit('removeStock', stock);
+  }
+        
+  // Date format function      
+  function formatDate(date){
+    var monthNames = [
+      "January", "February", "March",
+      "April", "May", "June", "July",
+      "August", "September", "October",
+      "November", "December"
+    ];
+    var monthIndex = date.getMonth();
+    var year = date.getFullYear();
+    return monthNames[monthIndex] + ' ' + year;
+      
+  }
 </script>
 <style>
     .legend {
@@ -145,24 +244,65 @@
     a{
         cursor: pointer;
     }
+    
+    div.tooltip {	
+      width: 180px;
+      text-align: left;
+      box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+      position: absolute;	
+      padding: 0px 20px 20px 20px;			
+      background: white;	
+      border: 0px;		
+      border-radius: 2px;			
+      pointer-events: none;			
+    }
+    
+    .xLine {
+      position: absolute;
+      top: 147px;
+      height: 350px;
+      width: 2px;
+      background-color: blue;
+      z-index: -1;
+    }
+    strong{
+      text-transform: uppercase;
+    }
+    
+    .symbolLabel{
+      width: 70px;
+      display: inline-block;
+      padding: 2px 8px 2px 8px;
+    }
+    
+    .value{
+      width: 70px;
+      text-align: right;
+      display: inline-block;
+      padding: 2px 8px 2px 8px;
+    }
+    
+    .lightgray{
+      background-color: #eeeeee;
+    }
 </style>
 
-
-<div class="row"> 
-    <div class="col-md-8">
-        <svg width="800" height="400">
-        </svg>
-    </div>
-    <div class="col-md-2">
-        <div id="divLegend"></div>
-    </div>
+<div class="mdl-grid>
+  <div class="mdl-cell mdl-cell--8-col">
+    <svg width="800" height="400">
+    </svg>
+  </div>
+  <div class="mdl-cell mdl-cell--4-col">
+    <div id="divLegend"></div>
+  </div>
 </div>
-<div class="form-group row">
-    <div class="col-sm-4">
-        <label for="txtStockSymbol" class="col-md-4 control-label">
-            Stock Symbol:
-        </label>
-        <input type="text" id="txtStockSymbol" class="form-control" /><br />
-        <button class="btn btn-default" id="btnGetStock">Get Stock</button>
+<div class="mdl-grid>
+  <div class="mdl-cell mdl-cell--12-col" style='padding-left: 60px'>
+    <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+      <input type="text" id="txtStockSymbol" class="mdl-textfield__input" />
+      <label for="txtStockSymbol" class="mdl-textfield__label">Stock Symbol:</label>
     </div>
+    <br/>
+    <button class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-button--accent" id="btnGetStock">Get Stock</button>
+  </div>
 </div>
